@@ -271,11 +271,24 @@ def main():
 
         if (
             normalize(query) not in normalized_history
-            and opera_valida(titolo)
+            or opera_valida(titolo)
         ):
             break
     else:
-        raise Exception("Nessuna opera valida trovata")
+        print("⚠️ fallback attivato")
+
+        # fallback manuale
+        fallback_opere = {
+            "cinema": ["Inception", "Fight Club", "Interstellar"],
+            "arte": ["Notte stellata", "Guernica", "La nascita di Venere"],
+            "letteratura": ["1984", "Il nome della rosa"],
+            "filosofia": ["La Repubblica Platone", "Essere e tempo Heidegger"],
+            "tecnologia": ["Internet", "Intelligenza artificiale"]
+        }
+
+        titolo = fallback_opere.get(categoria, ["Opera"])[0]
+        autore = ""
+        query = titolo
 
     descrizione, _ = get_wikipedia_summary(query)
     immagine = get_best_image(titolo, categoria, autore)
