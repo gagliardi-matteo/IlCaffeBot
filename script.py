@@ -94,17 +94,20 @@ def genera_post(titolo, testo, categoria):
 def manda_post(testo, immagine=None):
     if immagine:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-        requests.post(url, data={
+        response = requests.post(url, data={
             "chat_id": CHAT_ID,
             "caption": testo,
             "photo": immagine
         })
     else:
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-        requests.post(url, data={
+        response = requests.post(url, data={
             "chat_id": CHAT_ID,
             "text": testo
         })
+
+    print("TELEGRAM STATUS:", response.status_code)
+    print("TELEGRAM RESPONSE:", response.text)
 
 # ---------------------------
 # MAIN
