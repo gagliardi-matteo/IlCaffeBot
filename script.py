@@ -11,6 +11,7 @@ from openai import OpenAI
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OMDB_API_KEY = os.getenv("OMDB_API_KEY")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
@@ -34,8 +35,7 @@ def save_json(file, data):
 # CATEGORIA DEL GIORNO
 # ---------------------------
 def categoria_del_giorno():
-    giorno = datetime.datetime.today().weekday()
-    return GIORNI[giorno % len(GIORNI)]
+    return GIORNI[datetime.datetime.today().weekday() % len(GIORNI)]
 
 # ---------------------------
 # FALLBACK IMAGE
@@ -44,60 +44,31 @@ def fallback_image():
     return "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/No_image_available.svg/480px-No_image_available.svg.png"
 
 # ---------------------------
-# OPENAI - QUERY IMMAGINE
+# OMDB (FILM POSTER 🔥)
 # ---------------------------
-def genera_query_immagine(titolo, categoria):
-    prompt = f"""
-Genera una query perfetta per trovare un'immagine iconica.
-
-Titolo: {titolo}
-Categoria: {categoria}
-
-Regole:
-- deve trovare immagine rappresentativa
-- usa parole chiave tipo: poster, painting, book cover
-- output solo testo breve
-
-Esempio:
-"La dolce vita 1960 film poster"
-"""
+def get_movie_poster(titolo):
+    if not OMDB_API_KEY:
+        return None
 
     try:
-        response = client.chat.completions.create(
-            model="gpt-5-mini",
-            messages=[{"role": "user", "content": prompt}]
-        )
-
-        return response.choices[0].message.content.strip()
-
-    except:
-        return titolo
-
-# ---------------------------
-# WIKIMEDIA IMAGE
-# ---------------------------
-def get_wikimedia_image(query):
-    q = urllib.parse.quote(query)
-    url = f"https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch={q}&gsrlimit=5&prop=imageinfo&iiprop=url&format=json"
-
-    try:
+        url = f"http://www.omdbapi.com/?t={urllib.parse.quote(titolo)}&apikey={OMDB_API_KEY}"
         res = requests.get(url).json()
-        pages = res.get("query", {}).get("pages", {})
 
-        for p in pages.values():
-            info = p.get("imageinfo")
-            if info:
-                return info[0]["url"]
+        if res.get("Response") == "True":
+            poster = res.get("Poster")
+            if poster and poster != "N/A":
+                return poster
     except:
         pass
 
     return None
 
 # ---------------------------
-# WIKIPEDIA SUMMARY
+# WIKIPEDIA SUMMARY + IMAGE
 # ---------------------------
 def get_wikipedia_summary(titolo):
     titolo_url = urllib.parse.quote(titolo)
+
     url = f"https://it.wikipedia.org/api/rest_v1/page/summary/{titolo_url}"
 
     try:
@@ -112,36 +83,23 @@ def get_wikipedia_summary(titolo):
         return "", None
 
 # ---------------------------
-# BEST IMAGE (AI POWERED)
+# BEST IMAGE (DEFINITIVO)
 # ---------------------------
 def get_best_image(titolo, categoria):
-    import urllib.parse
 
-    # 🔹 1. cerca pagina Wikipedia giusta
-    search_url = f"https://it.wikipedia.org/w/api.php?action=query&list=search&srsearch={urllib.parse.quote(titolo)}&format=json"
+    # 🎬 CINEMA → OMDB
+    if categoria == "cinema":
+        poster = get_movie_poster(titolo)
+        if poster:
+            return poster
 
-    try:
-        search_res = requests.get(search_url).json()
+    # 📚🎨🧠 fallback Wikipedia
+    _, wiki_img = get_wikipedia_summary(titolo)
+    if wiki_img:
+        return wiki_img
 
-        if search_res["query"]["search"]:
-            page_title = search_res["query"]["search"][0]["title"]
+    return fallback_image()
 
-            # 🔹 2. prendi immagine della pagina
-            image_url = f"https://it.wikipedia.org/w/api.php?action=query&titles={urllib.parse.quote(page_title)}&prop=pageimages&format=json&pithumbsize=1000"
-
-            image_res = requests.get(image_url).json()
-
-            pages = image_res["query"]["pages"]
-
-            for p in pages.values():
-                if "thumbnail" in p:
-                    return p["thumbnail"]["source"]
-
-    except:
-        pass
-
-    # 🔹 fallback
-    return "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/No_image_available.svg/480px-No_image_available.svg.png"
 # ---------------------------
 # OPENAI - SCELTA OPERA
 # ---------------------------
@@ -149,7 +107,7 @@ def scegli_opera_ai(categoria):
     prompt = f"""
 Sei un curatore culturale.
 
-Dammi UN'opera interessante per la categoria: {categoria}
+Dammi UN'opera famosa per la categoria: {categoria}
 
 Formato JSON:
 {{
@@ -164,51 +122,44 @@ Formato JSON:
             messages=[{"role": "user", "content": prompt}]
         )
 
-        content = response.choices[0].message.content.strip()
+        content = response.choices[0].message.content
 
         start = content.find("{")
         end = content.rfind("}") + 1
-        content = content[start:end]
+        return json.loads(content[start:end])
 
-        return json.loads(content)
-
-    except Exception as e:
-        print("ERRORE SCELTA OPERA:", e)
+    except:
         return {"titolo": "Opera culturale", "autore": ""}
 
 # ---------------------------
 # OPENAI - GENERAZIONE TESTO
 # ---------------------------
-def genera_post_ai(titolo, categoria, descrizione_base):
+def genera_post_ai(titolo, categoria, descrizione):
     prompt = f"""
-Sei autore del canale Telegram "Il Caffè".
+Scrivi un post Telegram per "Il Caffè".
 
-Scrivi un post breve e coinvolgente su:
 Titolo: {titolo}
 Categoria: {categoria}
 
 Regole:
-- massimo 120 parole
-- tono moderno, interessante
-- NON accademico
-- inserisci un insight curioso
-- deve catturare subito
+- max 120 parole
+- coinvolgente
+- non accademico
+- con insight interessante
 
 Contesto:
-{descrizione_base}
+{descrizione}
 """
 
     try:
-        response = client.chat.completions.create(
+        res = client.chat.completions.create(
             model="gpt-5-mini",
             messages=[{"role": "user", "content": prompt}]
         )
+        return res.choices[0].message.content
 
-        return response.choices[0].message.content
-
-    except Exception as e:
-        print("ERRORE OPENAI:", e)
-        return f"☕ {titolo}\n\nUn contenuto interessante da scoprire."
+    except:
+        return f"☕ {titolo}\n\nUn contenuto interessante."
 
 # ---------------------------
 # TELEGRAM
@@ -216,21 +167,20 @@ Contesto:
 def manda_post(testo, immagine):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
 
-    response = requests.post(url, data={
+    res = requests.post(url, data={
         "chat_id": CHAT_ID,
         "caption": testo,
         "photo": immagine
     })
 
-    print("TELEGRAM STATUS:", response.status_code)
-    print("TELEGRAM RESPONSE:", response.text)
+    print(res.status_code, res.text)
 
 # ---------------------------
 # MAIN
 # ---------------------------
 def main():
     if not BOT_TOKEN or not CHAT_ID or not OPENAI_API_KEY:
-        raise Exception("Variabili mancanti!")
+        raise Exception("Variabili mancanti")
 
     history = load_json("history.json")
     categoria = categoria_del_giorno()
