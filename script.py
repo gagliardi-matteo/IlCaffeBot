@@ -44,15 +44,29 @@ def scegli_opera(opere, history):
 # WIKIPEDIA
 # ---------------------------
 def get_wikipedia(titolo):
-    url = f"https://it.wikipedia.org/api/rest_v1/page/summary/{titolo}"
-    res = requests.get(url).json()
-    
-    testo = res.get("extract", "")
+    # 🔧 sistema titolo per URL
+    titolo_url = titolo.replace(" ", "_")
+
+    url = f"https://it.wikipedia.org/api/rest_v1/page/summary/{titolo_url}"
+
+    try:
+        res = requests.get(url)
+
+        # ❌ pagina non trovata
+        if res.status_code != 200:
+            return f"Nessuna descrizione trovata per {titolo}.", None
+
+        data = res.json()
+
+    except Exception as e:
+        return f"Errore nel recupero dati per {titolo}.", None
+
+    testo = data.get("extract", f"{titolo} è un'opera significativa della cultura mondiale.")
     immagine = None
-    
-    if "thumbnail" in res:
-        immagine = res["thumbnail"]["source"]
-    
+
+    if "thumbnail" in data:
+        immagine = data["thumbnail"]["source"]
+
     return testo, immagine
 
 # ---------------------------
@@ -107,6 +121,9 @@ def main():
     opera = scegli_opera(opere[categoria], history[categoria])
 
     testo, immagine = get_wikipedia(opera)
+    
+    if not testo:
+        testo = "Oggi scopriamo un'opera interessante della cultura mondiale."
 
     post = genera_post(opera, testo, categoria)
 
