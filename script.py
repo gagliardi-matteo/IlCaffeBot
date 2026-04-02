@@ -39,69 +39,130 @@ def categoria_del_giorno():
     return GIORNI[giorno % len(GIORNI)]
 
 # ---------------------------
-# NO DUPLICATI
+# FALLBACK IMAGE
 # ---------------------------
-def scegli_opera(opere, history):
-    disponibili = [o for o in opere if o not in history]
-    if not disponibili:
-        history.clear()
-        disponibili = opere
-    return random.choice(disponibili)
+def fallback_image():
+    return "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/No_image_available.svg/480px-No_image_available.svg.png"
 
 # ---------------------------
-# WIKIPEDIA (ROBUSTO)
+# WIKIMEDIA IMAGE (TOP)
 # ---------------------------
-def get_wikipedia(titolo):
+def get_wikimedia_image(query):
+    q = urllib.parse.quote(query)
+    url = f"https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch={q}&gsrlimit=5&prop=imageinfo&iiprop=url&format=json"
+
+    try:
+        res = requests.get(url).json()
+        pages = res.get("query", {}).get("pages", {})
+
+        for p in pages.values():
+            info = p.get("imageinfo")
+            if info:
+                return info[0]["url"]
+    except:
+        pass
+
+    return None
+
+# ---------------------------
+# WIKIPEDIA SUMMARY
+# ---------------------------
+def get_wikipedia_summary(titolo):
     titolo_url = urllib.parse.quote(titolo)
     url = f"https://it.wikipedia.org/api/rest_v1/page/summary/{titolo_url}"
 
     try:
         res = requests.get(url)
-
         if res.status_code != 200:
-            return "", fallback_image()
+            return "", None
 
-        if not res.text.strip():
-            return "", fallback_image()
-
-        try:
-            data = res.json()
-        except:
-            return "", fallback_image()
+        data = res.json()
+        return data.get("extract", ""), data.get("thumbnail", {}).get("source")
 
     except:
-        return "", fallback_image()
-
-    testo = data.get("extract", "")
-    immagine = data.get("thumbnail", {}).get("source", fallback_image())
-
-    return testo, immagine
-
-
-def fallback_image():
-    return "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/No_image_available.svg/480px-No_image_available.svg.png"
-
+        return "", None
 
 # ---------------------------
-# OPENAI GENERAZIONE TESTO
+# BEST IMAGE
+# ---------------------------
+def get_best_image(titolo, categoria):
+    if categoria == "cinema":
+        query = f"{titolo} film poster"
+    elif categoria == "arte":
+        query = f"{titolo} painting"
+    elif categoria == "letteratura":
+        query = f"{titolo} book cover"
+    elif categoria == "filosofia":
+        query = f"{titolo} philosopher"
+    else:
+        query = titolo
+
+    # 1️⃣ Wikimedia
+    img = get_wikimedia_image(query)
+    if img:
+        return img
+
+    # 2️⃣ Wikipedia
+    _, wiki_img = get_wikipedia_summary(titolo)
+    if wiki_img:
+        return wiki_img
+
+    # 3️⃣ fallback
+    return fallback_image()
+
+# ---------------------------
+# OPENAI - SCELTA OPERA
+# ---------------------------
+def scegli_opera_ai(categoria):
+    prompt = f"""
+Sei un curatore culturale.
+
+Dammi UN'opera interessante per la categoria: {categoria}
+
+Formato JSON:
+{{
+  "titolo": "...",
+  "autore": "..."
+}}
+"""
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-5-mini",
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        content = response.choices[0].message.content.strip()
+
+        # sicurezza parsing
+        start = content.find("{")
+        end = content.rfind("}") + 1
+        content = content[start:end]
+
+        return json.loads(content)
+
+    except Exception as e:
+        print("ERRORE SCELTA OPERA:", e)
+        return {"titolo": "Opera culturale", "autore": ""}
+
+# ---------------------------
+# OPENAI - GENERAZIONE TESTO
 # ---------------------------
 def genera_post_ai(titolo, categoria, descrizione_base):
     prompt = f"""
-Sei autore di un canale Telegram culturale chiamato "Il Caffè".
+Sei autore di un canale Telegram chiamato "Il Caffè".
 
-Scrivi un post su:
+Scrivi un post breve e coinvolgente su:
 Titolo: {titolo}
 Categoria: {categoria}
 
 Regole:
 - massimo 120 parole
-- tono: coinvolgente, moderno, NON accademico
-- deve incuriosire subito
-- evita frasi banali tipo "oggi parliamo"
-- inserisci un piccolo insight interessante
-- stile fluido e leggibile
+- tono moderno e interessante
+- NO introduzioni banali
+- inserisci un insight
 
-Base:
+Contesto:
 {descrizione_base}
 """
 
@@ -115,17 +176,7 @@ Base:
 
     except Exception as e:
         print("ERRORE OPENAI:", e)
-        return fallback_post(titolo)
-
-
-def fallback_post(titolo):
-    return f"""☕ {titolo}
-
-Un contenuto culturale interessante da scoprire.
-
-☕ Il Caffè è il tuo momento quotidiano di cultura.
-"""
-
+        return f"☕ {titolo}\n\nUn contenuto interessante da scoprire."
 
 # ---------------------------
 # TELEGRAM
@@ -141,64 +192,35 @@ def manda_post(testo, immagine):
 
     print("TELEGRAM STATUS:", response.status_code)
     print("TELEGRAM RESPONSE:", response.text)
-    
-
-def scegli_opera_ai(categoria):
-    prompt = f"""
-Sei un curatore culturale.
-
-Dammi UN'opera interessante per la categoria: {categoria}
-
-Regole:
-- deve essere specifica (non generica)
-- deve esistere davvero
-- includi autore se necessario
-- evita opere troppo obscure
-
-Formato risposta JSON:
-{{
-  "titolo": "...",
-  "autore": "..."
-}}
-"""
-
-    response = client.chat.completions.create(
-        model="gpt-5-mini",
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    import json
-    return json.loads(response.choices[0].message.content)
-
 
 # ---------------------------
 # MAIN
 # ---------------------------
 def main():
     if not BOT_TOKEN or not CHAT_ID or not OPENAI_API_KEY:
-        raise Exception("Mancano variabili d'ambiente!")
-    
-    history = load_json("history.json")
+        raise Exception("Variabili mancanti!")
 
+    history = load_json("history.json")
     categoria = categoria_del_giorno()
 
     if categoria not in history:
         history[categoria] = []
 
-    opera_ai = scegli_opera_ai(categoria)
+    opera = scegli_opera_ai(categoria)
 
-    titolo = opera_ai["titolo"]
-    autore = opera_ai["autore"]
+    titolo = opera.get("titolo", "")
+    autore = opera.get("autore", "")
 
-    query = f"{titolo} {autore}" if autore else titolo
+    query = f"{titolo} {autore}".strip()
 
-    descrizione, immagine = get_wikipedia(query)
+    descrizione, _ = get_wikipedia_summary(query)
+    immagine = get_best_image(query, categoria)
 
     post = genera_post_ai(query, categoria, descrizione)
 
     manda_post(post, immagine)
 
-    history[categoria].append(opera_ai)
+    history[categoria].append(query)
     save_json("history.json", history)
 
 
