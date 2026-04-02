@@ -115,28 +115,33 @@ def get_wikipedia_summary(titolo):
 # BEST IMAGE (AI POWERED)
 # ---------------------------
 def get_best_image(titolo, categoria):
-    # 1️⃣ query AI
-    query_ai = genera_query_immagine(titolo, categoria)
-    print("QUERY AI:", query_ai)
+    import urllib.parse
 
-    # 2️⃣ Wikimedia con query AI
-    img = get_wikimedia_image(query_ai)
-    if img:
-        return img
+    # 🔹 1. cerca pagina Wikipedia giusta
+    search_url = f"https://it.wikipedia.org/w/api.php?action=query&list=search&srsearch={urllib.parse.quote(titolo)}&format=json"
 
-    # 3️⃣ retry con titolo base
-    img = get_wikimedia_image(titolo)
-    if img:
-        return img
+    try:
+        search_res = requests.get(search_url).json()
 
-    # 4️⃣ Wikipedia
-    _, wiki_img = get_wikipedia_summary(titolo)
-    if wiki_img:
-        return wiki_img
+        if search_res["query"]["search"]:
+            page_title = search_res["query"]["search"][0]["title"]
 
-    # 5️⃣ fallback
-    return fallback_image()
+            # 🔹 2. prendi immagine della pagina
+            image_url = f"https://it.wikipedia.org/w/api.php?action=query&titles={urllib.parse.quote(page_title)}&prop=pageimages&format=json&pithumbsize=1000"
 
+            image_res = requests.get(image_url).json()
+
+            pages = image_res["query"]["pages"]
+
+            for p in pages.values():
+                if "thumbnail" in p:
+                    return p["thumbnail"]["source"]
+
+    except:
+        pass
+
+    # 🔹 fallback
+    return "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/No_image_available.svg/480px-No_image_available.svg.png"
 # ---------------------------
 # OPENAI - SCELTA OPERA
 # ---------------------------
