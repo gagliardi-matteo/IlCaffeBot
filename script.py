@@ -1,5 +1,4 @@
 import requests
-import random
 import json
 import datetime
 import os
@@ -45,7 +44,37 @@ def fallback_image():
     return "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/No_image_available.svg/480px-No_image_available.svg.png"
 
 # ---------------------------
-# WIKIMEDIA IMAGE (TOP)
+# OPENAI - QUERY IMMAGINE
+# ---------------------------
+def genera_query_immagine(titolo, categoria):
+    prompt = f"""
+Genera una query perfetta per trovare un'immagine iconica.
+
+Titolo: {titolo}
+Categoria: {categoria}
+
+Regole:
+- deve trovare immagine rappresentativa
+- usa parole chiave tipo: poster, painting, book cover
+- output solo testo breve
+
+Esempio:
+"La dolce vita 1960 film poster"
+"""
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-5-mini",
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        return response.choices[0].message.content.strip()
+
+    except:
+        return titolo
+
+# ---------------------------
+# WIKIMEDIA IMAGE
 # ---------------------------
 def get_wikimedia_image(query):
     q = urllib.parse.quote(query)
@@ -83,31 +112,29 @@ def get_wikipedia_summary(titolo):
         return "", None
 
 # ---------------------------
-# BEST IMAGE
+# BEST IMAGE (AI POWERED)
 # ---------------------------
 def get_best_image(titolo, categoria):
-    if categoria == "cinema":
-        query = f"{titolo} film poster"
-    elif categoria == "arte":
-        query = f"{titolo} painting"
-    elif categoria == "letteratura":
-        query = f"{titolo} book cover"
-    elif categoria == "filosofia":
-        query = f"{titolo} philosopher"
-    else:
-        query = titolo
+    # 1️⃣ query AI
+    query_ai = genera_query_immagine(titolo, categoria)
+    print("QUERY AI:", query_ai)
 
-    # 1️⃣ Wikimedia
-    img = get_wikimedia_image(query)
+    # 2️⃣ Wikimedia con query AI
+    img = get_wikimedia_image(query_ai)
     if img:
         return img
 
-    # 2️⃣ Wikipedia
+    # 3️⃣ retry con titolo base
+    img = get_wikimedia_image(titolo)
+    if img:
+        return img
+
+    # 4️⃣ Wikipedia
     _, wiki_img = get_wikipedia_summary(titolo)
     if wiki_img:
         return wiki_img
 
-    # 3️⃣ fallback
+    # 5️⃣ fallback
     return fallback_image()
 
 # ---------------------------
@@ -134,7 +161,6 @@ Formato JSON:
 
         content = response.choices[0].message.content.strip()
 
-        # sicurezza parsing
         start = content.find("{")
         end = content.rfind("}") + 1
         content = content[start:end]
@@ -150,7 +176,7 @@ Formato JSON:
 # ---------------------------
 def genera_post_ai(titolo, categoria, descrizione_base):
     prompt = f"""
-Sei autore di un canale Telegram chiamato "Il Caffè".
+Sei autore del canale Telegram "Il Caffè".
 
 Scrivi un post breve e coinvolgente su:
 Titolo: {titolo}
@@ -158,9 +184,10 @@ Categoria: {categoria}
 
 Regole:
 - massimo 120 parole
-- tono moderno e interessante
-- NO introduzioni banali
-- inserisci un insight
+- tono moderno, interessante
+- NON accademico
+- inserisci un insight curioso
+- deve catturare subito
 
 Contesto:
 {descrizione_base}
