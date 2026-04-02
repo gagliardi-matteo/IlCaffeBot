@@ -15,7 +15,7 @@ OMDB_API_KEY = os.getenv("OMDB_API_KEY")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-GIORNI = ["arte", "letteratura", "filosofia", "cinema", "tecnologia"]
+GIORNI = ["arte", "letteratura", "filosofia", "arte", "tecnologia"]
 
 # ---------------------------
 # UTIL
