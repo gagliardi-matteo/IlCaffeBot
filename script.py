@@ -3,11 +3,19 @@ import random
 import json
 import datetime
 import os
+import urllib.parse
+from openai import OpenAI
 
+# ---------------------------
+# ENV
+# ---------------------------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-GIORNI = ["arte", "letteratura", "musica", "filosofia"]
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+GIORNI = ["arte", "letteratura", "filosofia", "cinema", "tecnologia"]
 
 # ---------------------------
 # UTIL
@@ -41,98 +49,157 @@ def scegli_opera(opere, history):
     return random.choice(disponibili)
 
 # ---------------------------
-# WIKIPEDIA
+# WIKIPEDIA (ROBUSTO)
 # ---------------------------
 def get_wikipedia(titolo):
-    # 🔧 sistema titolo per URL
-    titolo_url = titolo.replace(" ", "_")
-
+    titolo_url = urllib.parse.quote(titolo)
     url = f"https://it.wikipedia.org/api/rest_v1/page/summary/{titolo_url}"
 
     try:
         res = requests.get(url)
 
-        # ❌ pagina non trovata
         if res.status_code != 200:
-            return f"Nessuna descrizione trovata per {titolo}.", None
+            return "", fallback_image()
 
-        data = res.json()
+        if not res.text.strip():
+            return "", fallback_image()
 
-    except Exception as e:
-        return f"Errore nel recupero dati per {titolo}.", None
+        try:
+            data = res.json()
+        except:
+            return "", fallback_image()
 
-    testo = data.get("extract", f"{titolo} è un'opera significativa della cultura mondiale.")
-    immagine = None
+    except:
+        return "", fallback_image()
 
-    if "thumbnail" in data:
-        immagine = data["thumbnail"]["source"]
+    testo = data.get("extract", "")
+    immagine = data.get("thumbnail", {}).get("source", fallback_image())
 
     return testo, immagine
 
+
+def fallback_image():
+    return "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/No_image_available.svg/480px-No_image_available.svg.png"
+
+
 # ---------------------------
-# GENERAZIONE TESTO (NO AI)
+# OPENAI GENERAZIONE TESTO
 # ---------------------------
-def genera_post(titolo, testo, categoria):
-    intro = random.choice([
-        "☕ Oggi al Caffè:",
-        "📚 Un sorso di cultura:",
-        "✨ Scopriamo insieme:"
-    ])
-    
-    return f"""{intro}
+def genera_post_ai(titolo, categoria, descrizione_base):
+    prompt = f"""
+Sei autore di un canale Telegram culturale chiamato "Il Caffè".
 
-📌 {titolo} ({categoria})
+Scrivi un post su:
+Titolo: {titolo}
+Categoria: {categoria}
 
-{testo[:250]}...
+Regole:
+- massimo 120 parole
+- tono: coinvolgente, moderno, NON accademico
+- deve incuriosire subito
+- evita frasi banali tipo "oggi parliamo"
+- inserisci un piccolo insight interessante
+- stile fluido e leggibile
 
-👉 Torna domani per il prossimo caffè culturale.
+Base:
+{descrizione_base}
 """
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-5-mini",
+            messages=[{"role": "user", "content": prompt}]
+        )
+
+        return response.choices[0].message.content
+
+    except Exception as e:
+        print("ERRORE OPENAI:", e)
+        return fallback_post(titolo)
+
+
+def fallback_post(titolo):
+    return f"""☕ {titolo}
+
+Un contenuto culturale interessante da scoprire.
+
+☕ Il Caffè è il tuo momento quotidiano di cultura.
+"""
+
 
 # ---------------------------
 # TELEGRAM
 # ---------------------------
-def manda_post(testo, immagine=None):
-    if immagine:
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-        response = requests.post(url, data={
-            "chat_id": CHAT_ID,
-            "caption": testo,
-            "photo": immagine
-        })
-    else:
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-        response = requests.post(url, data={
-            "chat_id": CHAT_ID,
-            "text": testo
-        })
+def manda_post(testo, immagine):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
+
+    response = requests.post(url, data={
+        "chat_id": CHAT_ID,
+        "caption": testo,
+        "photo": immagine
+    })
 
     print("TELEGRAM STATUS:", response.status_code)
     print("TELEGRAM RESPONSE:", response.text)
+    
+
+def scegli_opera_ai(categoria):
+    prompt = f"""
+Sei un curatore culturale.
+
+Dammi UN'opera interessante per la categoria: {categoria}
+
+Regole:
+- deve essere specifica (non generica)
+- deve esistere davvero
+- includi autore se necessario
+- evita opere troppo obscure
+
+Formato risposta JSON:
+{{
+  "titolo": "...",
+  "autore": "..."
+}}
+"""
+
+    response = client.chat.completions.create(
+        model="gpt-5-mini",
+        messages=[{"role": "user", "content": prompt}]
+    )
+
+    import json
+    return json.loads(response.choices[0].message.content)
+
 
 # ---------------------------
 # MAIN
 # ---------------------------
 def main():
-    opere = load_json("opere.json")
+    if not BOT_TOKEN or not CHAT_ID or not OPENAI_API_KEY:
+        raise Exception("Mancano variabili d'ambiente!")
+    
     history = load_json("history.json")
 
     categoria = categoria_del_giorno()
-    
+
     if categoria not in history:
         history[categoria] = []
 
-    opera = scegli_opera(opere[categoria], history[categoria])
+    opera_ai = scegli_opera_ai(categoria)
 
-    testo, immagine = get_wikipedia(opera)
-    
-    if not testo:
-        testo = "Oggi scopriamo un'opera interessante della cultura mondiale."
+    titolo = opera_ai["titolo"]
+    autore = opera_ai["autore"]
 
-    post = genera_post(opera, testo, categoria)
+    query = f"{titolo} {autore}" if autore else titolo
+
+    descrizione, immagine = get_wikipedia(query)
+
+    post = genera_post_ai(query, categoria, descrizione)
 
     manda_post(post, immagine)
 
-    history[categoria].append(opera)
+    history[categoria].append(opera_ai)
     save_json("history.json", history)
+
 
 main()
