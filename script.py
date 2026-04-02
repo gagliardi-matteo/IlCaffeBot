@@ -2,9 +2,10 @@ import requests
 import random
 import json
 import datetime
+import os
 
-BOT_TOKEN = "TUO_TOKEN"
-CHAT_ID = "@il_caffe"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
 
 GIORNI = ["arte", "letteratura", "musica", "filosofia"]
 
