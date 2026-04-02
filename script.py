@@ -31,6 +31,9 @@ def save_json(file, data):
     with open(file, "w") as f:
         json.dump(data, f)
 
+def normalize(text):
+    return text.lower().strip()
+
 # ---------------------------
 # CATEGORIA DEL GIORNO
 # ---------------------------
@@ -44,7 +47,7 @@ def fallback_image():
     return "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/No_image_available.svg/480px-No_image_available.svg.png"
 
 # ---------------------------
-# OMDB (FILM POSTER 🔥)
+# OMDB (FILM POSTER)
 # ---------------------------
 def get_movie_poster(titolo):
     if not OMDB_API_KEY:
@@ -64,7 +67,7 @@ def get_movie_poster(titolo):
     return None
 
 # ---------------------------
-# WIKIPEDIA SUMMARY + IMAGE
+# WIKIPEDIA
 # ---------------------------
 def get_wikipedia_summary(titolo):
     titolo_url = urllib.parse.quote(titolo)
@@ -83,17 +86,15 @@ def get_wikipedia_summary(titolo):
         return "", None
 
 # ---------------------------
-# BEST IMAGE (DEFINITIVO)
+# BEST IMAGE
 # ---------------------------
 def get_best_image(titolo, categoria):
 
-    # 🎬 CINEMA → OMDB
     if categoria == "cinema":
         poster = get_movie_poster(titolo)
         if poster:
             return poster
 
-    # 📚🎨🧠 fallback Wikipedia
     _, wiki_img = get_wikipedia_summary(titolo)
     if wiki_img:
         return wiki_img
@@ -101,13 +102,21 @@ def get_best_image(titolo, categoria):
     return fallback_image()
 
 # ---------------------------
-# OPENAI - SCELTA OPERA
+# OPENAI - SCELTA OPERA (CON HISTORY)
 # ---------------------------
-def scegli_opera_ai(categoria):
+def scegli_opera_ai(categoria, history):
     prompt = f"""
 Sei un curatore culturale.
 
-Dammi UN'opera famosa per la categoria: {categoria}
+Categoria: {categoria}
+
+NON usare queste opere:
+{history}
+
+Regole:
+- scegli qualcosa di diverso
+- evita opere già usate
+- varia autore e periodo
 
 Formato JSON:
 {{
@@ -188,13 +197,25 @@ def main():
     if categoria not in history:
         history[categoria] = []
 
-    opera = scegli_opera_ai(categoria)
+    # 🔥 NORMALIZZA HISTORY
+    normalized_history = [normalize(h) for h in history[categoria]]
 
-    titolo = opera.get("titolo", "")
-    autore = opera.get("autore", "")
+    # 🔥 RETRY LOOP (ANTI DUPLICATI)
+    for _ in range(5):
+        opera = scegli_opera_ai(categoria, history[categoria])
 
-    query = f"{titolo} {autore}".strip()
+        titolo = opera.get("titolo", "")
+        autore = opera.get("autore", "")
 
+        query = f"{titolo} {autore}".strip()
+        normalized_query = normalize(query)
+
+        if normalized_query not in normalized_history:
+            break
+    else:
+        raise Exception("Impossibile trovare opera nuova")
+
+    # contenuti
     descrizione, _ = get_wikipedia_summary(query)
     immagine = get_best_image(titolo, categoria)
 
