@@ -90,11 +90,13 @@ def get_wikipedia_summary(titolo):
 # ---------------------------
 def get_best_image(titolo, categoria):
 
+    # 🎬 CINEMA → OMDB
     if categoria == "cinema":
         poster = get_movie_poster(titolo)
         if poster:
             return poster
 
+    # 📚🎨🧠 fallback Wikipedia
     _, wiki_img = get_wikipedia_summary(titolo)
     if wiki_img:
         return wiki_img
