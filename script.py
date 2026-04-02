@@ -47,7 +47,7 @@ def fallback_image():
     return "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/No_image_available.svg/480px-No_image_available.svg.png"
 
 # ---------------------------
-# OMDB (FILM POSTER)
+# 🎬 OMDB (FILM)
 # ---------------------------
 def get_movie_poster(titolo):
     if not OMDB_API_KEY:
@@ -61,6 +61,45 @@ def get_movie_poster(titolo):
             poster = res.get("Poster")
             if poster and poster != "N/A":
                 return poster
+    except:
+        pass
+
+    return None
+
+# ---------------------------
+# 🎨 MET (ARTE)
+# ---------------------------
+def get_art_image(titolo):
+    try:
+        search_url = f"https://collectionapi.metmuseum.org/public/collection/v1/search?q={urllib.parse.quote(titolo)}"
+        res = requests.get(search_url).json()
+
+        if res["total"] > 0:
+            object_id = res["objectIDs"][0]
+
+            obj_url = f"https://collectionapi.metmuseum.org/public/collection/v1/objects/{object_id}"
+            obj = requests.get(obj_url).json()
+
+            img = obj.get("primaryImage")
+            if img:
+                return img
+    except:
+        pass
+
+    return None
+
+# ---------------------------
+# 📚 OPENLIBRARY (LIBRI)
+# ---------------------------
+def get_book_cover(titolo):
+    try:
+        url = f"https://openlibrary.org/search.json?title={urllib.parse.quote(titolo)}"
+        res = requests.get(url).json()
+
+        docs = res.get("docs", [])
+        if docs and "cover_i" in docs[0]:
+            cover_id = docs[0]["cover_i"]
+            return f"https://covers.openlibrary.org/b/id/{cover_id}-L.jpg"
     except:
         pass
 
@@ -86,17 +125,26 @@ def get_wikipedia_summary(titolo):
         return "", None
 
 # ---------------------------
-# BEST IMAGE
+# BEST IMAGE (MULTI SOURCE 🔥)
 # ---------------------------
 def get_best_image(titolo, categoria):
 
-    # 🎬 CINEMA → OMDB
     if categoria == "cinema":
-        poster = get_movie_poster(titolo)
-        if poster:
-            return poster
+        img = get_movie_poster(titolo)
+        if img:
+            return img
 
-    # 📚🎨🧠 fallback Wikipedia
+    if categoria == "arte":
+        img = get_art_image(titolo)
+        if img:
+            return img
+
+    if categoria == "letteratura":
+        img = get_book_cover(titolo)
+        if img:
+            return img
+
+    # fallback Wikipedia
     _, wiki_img = get_wikipedia_summary(titolo)
     if wiki_img:
         return wiki_img
@@ -104,7 +152,7 @@ def get_best_image(titolo, categoria):
     return fallback_image()
 
 # ---------------------------
-# OPENAI - SCELTA OPERA (CON HISTORY)
+# OPENAI - SCELTA OPERA
 # ---------------------------
 def scegli_opera_ai(categoria, history):
     prompt = f"""
@@ -115,11 +163,6 @@ Categoria: {categoria}
 NON usare queste opere:
 {history}
 
-Regole:
-- scegli qualcosa di diverso
-- evita opere già usate
-- varia autore e periodo
-
 Formato JSON:
 {{
   "titolo": "...",
@@ -128,15 +171,15 @@ Formato JSON:
 """
 
     try:
-        response = client.chat.completions.create(
+        res = client.chat.completions.create(
             model="gpt-5-mini",
             messages=[{"role": "user", "content": prompt}]
         )
 
-        content = response.choices[0].message.content
-
+        content = res.choices[0].message.content
         start = content.find("{")
         end = content.rfind("}") + 1
+
         return json.loads(content[start:end])
 
     except:
@@ -199,10 +242,9 @@ def main():
     if categoria not in history:
         history[categoria] = []
 
-    # 🔥 NORMALIZZA HISTORY
     normalized_history = [normalize(h) for h in history[categoria]]
 
-    # 🔥 RETRY LOOP (ANTI DUPLICATI)
+    # 🔁 anti-duplicati
     for _ in range(5):
         opera = scegli_opera_ai(categoria, history[categoria])
 
@@ -210,14 +252,12 @@ def main():
         autore = opera.get("autore", "")
 
         query = f"{titolo} {autore}".strip()
-        normalized_query = normalize(query)
 
-        if normalized_query not in normalized_history:
+        if normalize(query) not in normalized_history:
             break
     else:
-        raise Exception("Impossibile trovare opera nuova")
+        raise Exception("Nessuna opera nuova trovata")
 
-    # contenuti
     descrizione, _ = get_wikipedia_summary(query)
     immagine = get_best_image(titolo, categoria)
 
