@@ -69,20 +69,32 @@ def get_movie_poster(titolo):
 # ---------------------------
 # 🎨 MET (ARTE)
 # ---------------------------
-def get_art_image(titolo):
+def get_art_image(titolo, autore=None):
     try:
-        search_url = f"https://collectionapi.metmuseum.org/public/collection/v1/search?q={urllib.parse.quote(titolo)}"
+        query = titolo
+        search_url = f"https://collectionapi.metmuseum.org/public/collection/v1/search?q={urllib.parse.quote(query)}"
         res = requests.get(search_url).json()
 
         if res["total"] > 0:
-            object_id = res["objectIDs"][0]
+            object_ids = res["objectIDs"][:10]  # 🔥 guarda più risultati
 
-            obj_url = f"https://collectionapi.metmuseum.org/public/collection/v1/objects/{object_id}"
-            obj = requests.get(obj_url).json()
+            for object_id in object_ids:
+                obj_url = f"https://collectionapi.metmuseum.org/public/collection/v1/objects/{object_id}"
+                obj = requests.get(obj_url).json()
 
-            img = obj.get("primaryImage")
-            if img:
-                return img
+                title = obj.get("title", "").lower()
+                artist = obj.get("artistDisplayName", "").lower()
+
+                titolo_norm = titolo.lower()
+                autore_norm = (autore or "").lower()
+
+                # 🔥 MATCH INTELLIGENTE
+                if titolo_norm in title or title in titolo_norm:
+                    if not autore or autore_norm in artist:
+                        img = obj.get("primaryImage")
+                        if img:
+                            return img
+
     except:
         pass
 
@@ -127,7 +139,7 @@ def get_wikipedia_summary(titolo):
 # ---------------------------
 # BEST IMAGE (MULTI SOURCE 🔥)
 # ---------------------------
-def get_best_image(titolo, categoria):
+def get_best_image(titolo, categoria, autore=None):
 
     if categoria == "cinema":
         img = get_movie_poster(titolo)
@@ -135,7 +147,7 @@ def get_best_image(titolo, categoria):
             return img
 
     if categoria == "arte":
-        img = get_art_image(titolo)
+        img = get_art_image(titolo, autore)
         if img:
             return img
 
@@ -144,7 +156,6 @@ def get_best_image(titolo, categoria):
         if img:
             return img
 
-    # fallback Wikipedia
     _, wiki_img = get_wikipedia_summary(titolo)
     if wiki_img:
         return wiki_img
@@ -259,7 +270,7 @@ def main():
         raise Exception("Nessuna opera nuova trovata")
 
     descrizione, _ = get_wikipedia_summary(query)
-    immagine = get_best_image(titolo, categoria)
+    immagine = get_best_image(titolo, categoria, autore)
 
     post = genera_post_ai(query, categoria, descrizione)
 
