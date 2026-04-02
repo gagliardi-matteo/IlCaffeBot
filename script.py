@@ -47,7 +47,18 @@ def fallback_image():
     return "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ac/No_image_available.svg/480px-No_image_available.svg.png"
 
 # ---------------------------
-# 🎬 OMDB (FILM)
+# VALIDAZIONE OPERA (ANTI FAKE)
+# ---------------------------
+def opera_valida(titolo):
+    try:
+        url = f"https://it.wikipedia.org/api/rest_v1/page/summary/{urllib.parse.quote(titolo)}"
+        res = requests.get(url)
+        return res.status_code == 200
+    except:
+        return False
+
+# ---------------------------
+# 🎬 OMDB
 # ---------------------------
 def get_movie_poster(titolo):
     if not OMDB_API_KEY:
@@ -71,26 +82,21 @@ def get_movie_poster(titolo):
 # ---------------------------
 def get_art_image(titolo, autore=None):
     try:
-        query = titolo
-        search_url = f"https://collectionapi.metmuseum.org/public/collection/v1/search?q={urllib.parse.quote(query)}"
+        search_url = f"https://collectionapi.metmuseum.org/public/collection/v1/search?q={urllib.parse.quote(titolo)}"
         res = requests.get(search_url).json()
 
         if res["total"] > 0:
-            object_ids = res["objectIDs"][:10]  # 🔥 guarda più risultati
+            for object_id in res["objectIDs"][:10]:
 
-            for object_id in object_ids:
-                obj_url = f"https://collectionapi.metmuseum.org/public/collection/v1/objects/{object_id}"
-                obj = requests.get(obj_url).json()
+                obj = requests.get(
+                    f"https://collectionapi.metmuseum.org/public/collection/v1/objects/{object_id}"
+                ).json()
 
                 title = obj.get("title", "").lower()
                 artist = obj.get("artistDisplayName", "").lower()
 
-                titolo_norm = titolo.lower()
-                autore_norm = (autore or "").lower()
-
-                # 🔥 MATCH INTELLIGENTE
-                if titolo_norm in title or title in titolo_norm:
-                    if not autore or autore_norm in artist:
+                if titolo.lower() in title or title in titolo.lower():
+                    if not autore or autore.lower() in artist:
                         img = obj.get("primaryImage")
                         if img:
                             return img
@@ -101,7 +107,7 @@ def get_art_image(titolo, autore=None):
     return None
 
 # ---------------------------
-# 📚 OPENLIBRARY (LIBRI)
+# 📚 OPENLIBRARY
 # ---------------------------
 def get_book_cover(titolo):
     try:
@@ -110,8 +116,7 @@ def get_book_cover(titolo):
 
         docs = res.get("docs", [])
         if docs and "cover_i" in docs[0]:
-            cover_id = docs[0]["cover_i"]
-            return f"https://covers.openlibrary.org/b/id/{cover_id}-L.jpg"
+            return f"https://covers.openlibrary.org/b/id/{docs[0]['cover_i']}-L.jpg"
     except:
         pass
 
@@ -121,12 +126,10 @@ def get_book_cover(titolo):
 # WIKIPEDIA
 # ---------------------------
 def get_wikipedia_summary(titolo):
-    titolo_url = urllib.parse.quote(titolo)
-
-    url = f"https://it.wikipedia.org/api/rest_v1/page/summary/{titolo_url}"
-
     try:
+        url = f"https://it.wikipedia.org/api/rest_v1/page/summary/{urllib.parse.quote(titolo)}"
         res = requests.get(url)
+
         if res.status_code != 200:
             return "", None
 
@@ -137,7 +140,7 @@ def get_wikipedia_summary(titolo):
         return "", None
 
 # ---------------------------
-# BEST IMAGE (MULTI SOURCE 🔥)
+# BEST IMAGE
 # ---------------------------
 def get_best_image(titolo, categoria, autore=None):
 
@@ -174,6 +177,11 @@ Categoria: {categoria}
 NON usare queste opere:
 {history}
 
+Regole:
+- deve esistere davvero
+- niente placeholder
+- varia autore e periodo
+
 Formato JSON:
 {{
   "titolo": "...",
@@ -197,7 +205,7 @@ Formato JSON:
         return {"titolo": "Opera culturale", "autore": ""}
 
 # ---------------------------
-# OPENAI - GENERAZIONE TESTO
+# OPENAI - POST
 # ---------------------------
 def genera_post_ai(titolo, categoria, descrizione):
     prompt = f"""
@@ -210,10 +218,7 @@ Regole:
 - max 120 parole
 - coinvolgente
 - non accademico
-- con insight interessante
-
-Contesto:
-{descrizione}
+- insight interessante
 """
 
     try:
@@ -224,7 +229,7 @@ Contesto:
         return res.choices[0].message.content
 
     except:
-        return f"☕ {titolo}\n\nUn contenuto interessante."
+        return f"☕ {titolo}"
 
 # ---------------------------
 # TELEGRAM
@@ -255,7 +260,7 @@ def main():
 
     normalized_history = [normalize(h) for h in history[categoria]]
 
-    # 🔁 anti-duplicati
+    # 🔁 RETRY + VALIDAZIONE
     for _ in range(5):
         opera = scegli_opera_ai(categoria, history[categoria])
 
@@ -264,10 +269,13 @@ def main():
 
         query = f"{titolo} {autore}".strip()
 
-        if normalize(query) not in normalized_history:
+        if (
+            normalize(query) not in normalized_history
+            and opera_valida(titolo)
+        ):
             break
     else:
-        raise Exception("Nessuna opera nuova trovata")
+        raise Exception("Nessuna opera valida trovata")
 
     descrizione, _ = get_wikipedia_summary(query)
     immagine = get_best_image(titolo, categoria, autore)
