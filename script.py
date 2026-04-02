@@ -246,7 +246,7 @@ def main():
     query = f"{titolo} {autore}".strip()
 
     descrizione, _ = get_wikipedia_summary(query)
-    immagine = get_best_image(query, categoria)
+    immagine = get_best_image(titolo, categoria)
 
     post = genera_post_ai(query, categoria, descrizione)
 
