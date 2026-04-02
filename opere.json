@@ -1,0 +1,19 @@
+{
+  "arte": [
+    "Notte stellata",
+    "Guernica",
+    "David (Michelangelo)"
+  ],
+  "letteratura": [
+    "Divina Commedia",
+    "I promessi sposi"
+  ],
+  "musica": [
+    "Bohemian Rhapsody",
+    "Imagine (John Lennon)"
+  ],
+  "filosofia": [
+    "Repubblica (Platone)",
+    "Così parlò Zarathustra"
+  ]
+}
